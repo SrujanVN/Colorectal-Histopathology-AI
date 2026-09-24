@@ -1,0 +1,1 @@
+"""Colorectal histopathology demo application."""
