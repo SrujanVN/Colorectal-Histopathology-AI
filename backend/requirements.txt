@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+torch
+torchvision
+pillow
+numpy
+scikit-image
+opencv-python
+lime
+captum
+grad-cam
+python-multipart
+python-dotenv
+typing-extensions
+google-generativeai
+
