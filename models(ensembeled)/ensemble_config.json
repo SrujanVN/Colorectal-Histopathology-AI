@@ -1,0 +1,27 @@
+{
+  "model_order": [
+    "EfficientNetB3",
+    "DenseNet121",
+    "MobileNetV2",
+    "ResNet50"
+  ],
+  "input_sizes": {
+    "EfficientNetB3": 300,
+    "DenseNet121": 224,
+    "MobileNetV2": 224,
+    "ResNet50": 224
+  },
+  "class_labels": [
+    "01_TUMOR",
+    "02_STROMA",
+    "03_COMPLEX",
+    "04_LYMPHO",
+    "05_DEBRIS",
+    "06_MUCOSA",
+    "07_ADIPOSE",
+    "08_EMPTY",
+    "UNKNOWN"
+  ],
+  "method": "soft voting: mean of per-model softmax probabilities",
+  "input_format": "RGB float tensor in [0,1], shape (B,3,H,W); resizing + normalisation done inside"
+}
