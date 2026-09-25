@@ -1,16 +1,20 @@
 FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    MODEL_DIR=/app/models
-
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app ./app
-COPY docs ./docs
-COPY README.md .
-RUN mkdir -p /app/models
 
-EXPOSE 8501
-CMD ["streamlit", "run", "app/main.py", "--server.address=0.0.0.0"]
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+COPY backend /app/backend
+COPY models(ResNet50) /app/models(ResNet50)
+COPY models(MobileNetV2) /app/models(MobileNetV2)
+COPY models(EfficientNetB3) /app/models(EfficientNetB3)
+COPY models(DenseNet121) /app/models(DenseNet121)
+
+WORKDIR /app/backend
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+

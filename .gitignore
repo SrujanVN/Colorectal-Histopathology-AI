@@ -1,16 +1,58 @@
+# Python
 __pycache__/
 *.py[cod]
-*.pyc
+*$py.class
+*.so
+.Python
 .venv/
 venv/
-.env
-.streamlit/secrets.toml
-models/*
-!models/.gitkeep
-data/
-.pytest_cache/
-.ruff_cache/
-coverage.xml
-htmlcov/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Frontend build
+frontend/dist/
+frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS
 Thumbs.db
+.DS_Store
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Model files (if too large, consider Git LFS)
+# Uncomment if models are too large for git
+# *.pth
+# models/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
