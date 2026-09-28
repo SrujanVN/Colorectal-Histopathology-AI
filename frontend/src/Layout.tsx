@@ -1,79 +1,47 @@
-import React from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { ChatbotSidebar } from "./components/ChatbotSidebar";
+
+const NAV_ITEMS = [
+  { label: "Home", path: "/" },
+  { label: "Analysis Workspace", path: "/analyze" },
+  { label: "Models", path: "/models" },
+  { label: "Reports", path: "/reports" },
+  { label: "History", path: "/history" },
+];
 
 export const Layout: React.FC = () => {
-  const location = useLocation();
-  const isHomePage = location.pathname === "/";
+  const { pathname } = useLocation();
 
-  const scrollToSection = (id: string) => {
-    if (isHomePage) {
-      const element = document.getElementById(id);
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    } else {
-      // If not on home page, navigate to home with hash
-      window.location.href = `/#${id}`;
-      // After navigation, scroll will be handled by Home component's useEffect
-    }
-  };
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    const pageTitle = NAV_ITEMS.find((item) => item.path === pathname)?.label ?? "Workspace";
+    document.title = `${pageTitle} · Colorectal Histopathology Analysis`;
+  }, [pathname]);
 
-  const scrollToTop = () => {
-    if (isHomePage) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } else {
-      window.location.href = "/";
-    }
-  };
-
-  return (
-    <div className="app-root gradient-bg">
-      <header className="top-nav">
-        <div className="top-nav__brand">Colorectal Cancer XAI</div>
-        <nav className="top-nav__links">
-          <button
-            onClick={scrollToTop}
-            className="top-nav__link-button"
-            type="button"
+  return <div className="app-root gradient-bg">
+    <header className="top-nav">
+      <Link className="top-nav__brand" to="/" aria-label="Colorectal Histopathology Analysis home">
+        Colorectal Histopathology Analysis
+      </Link>
+      <nav className="top-nav__links" aria-label="Main navigation">
+        {NAV_ITEMS.map(({ label, path }) => (
+          <NavLink
+            key={path}
+            to={path}
+            end={path === "/"}
+            className={({ isActive }) => `top-nav__link-button${isActive ? " is-active" : ""}`}
           >
-            Home
-          </button>
-          <button
-            onClick={() => scrollToSection("features")}
-            className="top-nav__link-button"
-            type="button"
-          >
-            Features
-          </button>
-          <button
-            onClick={() => scrollToSection("about")}
-            className="top-nav__link-button"
-            type="button"
-          >
-            About
-          </button>
-          <button
-            onClick={() => scrollToSection("analyze")}
-            className="top-nav__link-button"
-            type="button"
-          >
-            Analyze
-          </button>
-          <button
-            onClick={() => scrollToSection("history")}
-            className="top-nav__link-button"
-            type="button"
-          >
-            History
-          </button>
-        </nav>
-      </header>
-
-      <main className="page-shell">
-        <Outlet />
-      </main>
-    </div>
-  );
+            {label}
+          </NavLink>
+        ))}
+      </nav>
+    </header>
+    <main className="page-shell page-shell--app"><Outlet /></main>
+    {pathname !== "/analyze" && <ChatbotSidebar />}
+    <footer className="app-footer">
+      <span>Colorectal Histopathology Analysis</span>
+      <span>Research and education · Not a clinical diagnosis</span>
+    </footer>
+  </div>;
 };
-
-

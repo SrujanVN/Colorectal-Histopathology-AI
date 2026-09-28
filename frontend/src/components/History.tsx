@@ -8,8 +8,44 @@ import {
 import { PredictionCard } from "./PredictionCard";
 import { ExplanationTabs } from "./ExplanationTabs";
 import { DownloadReportButton } from "./DownloadReportButton";
+import { createImagePreviewFromBase64 } from "../api/client";
 
-export const History: React.FC = () => {
+const HistoryImage: React.FC<{ item: HistoryItem; className: string }> = ({ item, className }) => {
+  const [convertedUrl, setConvertedUrl] = useState<string | null>(null);
+  const isTiff = /tiff?/i.test(item.imageMimeType) || /\.tiff?$/i.test(item.fileName);
+
+  useEffect(() => {
+    if (!isTiff) return;
+    let active = true;
+    let objectUrl: string | null = null;
+    createImagePreviewFromBase64(item.imageBase64, item.imageMimeType)
+      .then((url) => {
+        if (active) {
+          objectUrl = url;
+          setConvertedUrl(url);
+        } else {
+          URL.revokeObjectURL(url);
+        }
+      })
+      .catch(() => setConvertedUrl(null));
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [isTiff, item.imageBase64, item.imageMimeType]);
+
+  const src = isTiff
+    ? convertedUrl
+    : `data:${item.imageMimeType};base64,${item.imageBase64}`;
+  if (!src) return <div className={`${className} history-image-placeholder`} aria-label="TIFF image preview" />;
+  return <img src={src} alt={item.fileName} className={className} />;
+};
+
+interface HistoryProps {
+  title?: string;
+}
+
+export const History: React.FC<HistoryProps> = ({ title = "Prediction History" }) => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -83,19 +119,19 @@ export const History: React.FC = () => {
 
   if (history.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card-title">Prediction History</h2>
+      <div className="card history-panel history-panel--empty">
+        <h2 className="card-title">{title}</h2>
         <p className="muted">
-          Your prediction history will appear here. Each time you analyze an
-          image, it will be saved automatically.
+          Nothing is saved here yet. Run an image analysis and the result will appear automatically.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="card">
+    <div className="card history-panel">
       <div
+        className="history-panel__header"
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -104,7 +140,7 @@ export const History: React.FC = () => {
         }}
       >
         <h2 className="card-title" style={{ margin: 0 }}>
-          Prediction History ({history.length})
+          {title} ({history.length})
         </h2>
         <button
           className="primary-button"
@@ -119,14 +155,13 @@ export const History: React.FC = () => {
         </button>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div className="history-list">
         {history.map((item) => {
           const isExpanded = expandedId === item.id;
-          const imageUrl = `data:${item.imageMimeType};base64,${item.imageBase64}`;
-
           return (
             <div
               key={item.id}
+              className="history-item"
               style={{
                 border: "1px solid var(--color-border)",
                 borderRadius: "8px",
@@ -136,6 +171,7 @@ export const History: React.FC = () => {
             >
               {/* History Item Header */}
               <div
+                className="history-item__summary"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -155,20 +191,10 @@ export const History: React.FC = () => {
                 tabIndex={0}
               >
                 {/* Thumbnail */}
-                <img
-                  src={imageUrl}
-                  alt={item.fileName}
-                  style={{
-                    width: "80px",
-                    height: "80px",
-                    objectFit: "cover",
-                    borderRadius: "4px",
-                    flexShrink: 0,
-                  }}
-                />
+                <HistoryImage item={item} className="history-item__thumbnail" />
 
                 {/* Item Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="history-item__meta">
                   <div
                     style={{
                       display: "flex",
@@ -210,6 +236,7 @@ export const History: React.FC = () => {
 
                 {/* Expand/Collapse Icon */}
                 <div
+                  className={`history-item__chevron${isExpanded ? " is-expanded" : ""}`}
                   style={{
                     fontSize: "1.5rem",
                     color: "var(--color-text-muted)",
@@ -222,6 +249,7 @@ export const History: React.FC = () => {
 
                 {/* Delete Button */}
                 <button
+                  className="history-item__delete"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDelete(item.id);
@@ -253,6 +281,7 @@ export const History: React.FC = () => {
               {/* Expanded Details */}
               {isExpanded && (
                 <div
+                  className="history-item__details"
                   style={{
                     borderTop: "1px solid var(--color-border)",
                     padding: "1.5rem",
@@ -263,11 +292,7 @@ export const History: React.FC = () => {
                     <div>
                       <div className="card">
                         <h3 className="card-title">Input Image</h3>
-                        <img
-                          src={imageUrl}
-                          alt={item.fileName}
-                          className="preview-image"
-                        />
+                        <HistoryImage item={item} className="preview-image" />
                       </div>
                       <div style={{ height: "1.5rem" }} />
                       <ExplanationTabs explain={item.result} />

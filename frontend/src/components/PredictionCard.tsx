@@ -30,20 +30,24 @@ export const PredictionCard: React.FC<Props> = ({
   );
 
   return (
-    <div className="card anim-card-enter">
-      <h2 className="card-title">Prediction</h2>
-      <p>
-        Predicted class: <strong>{predicted_class}</strong>{" "}
-        <span className="muted">
-          ({(confidence * 100).toFixed(1)}
-          % confidence)
-        </span>
-      </p>
+    <div className="card anim-card-enter result-card">
+      <div className="result-card__heading">
+        <div>
+          <p className="result-card__eyebrow">ANALYSIS RESULT</p>
+          <h2 className="card-title">Predicted tissue class</h2>
+        </div>
+        <span className="result-card__confidence">{(confidence * 100).toFixed(1)}% confidence</span>
+      </div>
+      <div className="result-card__prediction">
+        <span className="result-card__class-mark" aria-hidden="true">✓</span>
+        <strong>{predicted_class}</strong>
+      </div>
 
-      <div style={{ marginTop: "1rem" }}>
-        <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem" }}>
-          Ensemble class probabilities
-        </h3>
+      <div className="result-probabilities">
+        <div className="result-probabilities__heading">
+          <h3>Class probabilities</h3>
+          <span>Soft-voting ensemble</span>
+        </div>
         {classEntries.map(([label, prob]) => (
           <div key={label} className="prediction-row">
             <span style={{ minWidth: 90 }}>{label}</span>
@@ -60,7 +64,7 @@ export const PredictionCard: React.FC<Props> = ({
         ))}
       </div>
 
-      <details style={{ marginTop: "1rem" }}>
+      <details className="result-model-details">
         <summary style={{ cursor: "pointer", fontSize: "0.9rem" }}>
           Per‑model probabilities
         </summary>
@@ -111,13 +115,13 @@ export const PredictionCard: React.FC<Props> = ({
         </div>
       </details>
 
-      <p className="muted" style={{ marginTop: "0.75rem" }}>
+      <p className="muted result-card__note">
         Classes follow the Kather colorectal histology scheme (8 tissue types +
         UNKNOWN).
       </p>
 
       {fullResult && fileName && modelName && timestamp && imageBase64 && imageMimeType && (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="result-card__download">
           <DownloadReportButton
             fileName={fileName}
             modelName={modelName}

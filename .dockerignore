@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+venv
+**/node_modules
+**/__pycache__
+**/*.py[cod]
+**/.env
+frontend/dist
+frontend/.vite
+notenooks
+**/*.ipynb
+models(ensembeled)
+models(ResNet50)/final_colorectal_model.pth
+models(mobilenetv2)/final_colorectal_mobilenetv2.pth
+models(EfficientNetB3)/final_colorectal_efficientnet_b3.pth
+models(DenseNet121)/final_colorectal_model.pth

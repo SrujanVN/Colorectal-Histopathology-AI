@@ -5,12 +5,12 @@ torchvision
 pillow
 numpy
 scikit-image
-opencv-python
+opencv-python-headless
 lime
 captum
 grad-cam
 python-multipart
 python-dotenv
 typing-extensions
-google-generativeai
+google-genai
 

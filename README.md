@@ -1,44 +1,26 @@
 # Colorectal Histopathology Analysis
 
-An explainable AI research application for classifying colorectal histopathology image patches with an ensemble of deep-learning models. The project combines a React/Vite dashboard with a FastAPI/PyTorch inference service and produces visual explanations using Grad-CAM, LIME, and GradientSHAP.
+An educational research application for exploring colorectal tissue image classification and model explanations. It combines a React/Vite interface with a FastAPI and PyTorch inference API, four image classifiers, and Grad-CAM, LIME, and GradientSHAP visualizations.
 
-> **Research use only:** This project is not a clinical diagnostic device. Predictions must not be used as the sole basis for medical decisions and should be reviewed by a qualified pathologist or physician.
+> **Research use only.** This application is not a medical device and does not provide a diagnosis. Its outputs must not be used as the sole basis for clinical decisions. A qualified pathologist or clinician should interpret patient-specific findings.
 
-## Features
+## Highlights
 
-- Upload colorectal histology patches in PNG, JPG, or TIFF format.
-- Run an ensemble prediction or select an individual model.
-- View predicted class, confidence, class probabilities, and per-model scores.
-- Generate image-specific Grad-CAM, LIME, and SHAP/GradientSHAP explanations.
-- Review model transparency information, notebook-derived metrics, and training graphs.
-- Explore a local 3D intestinal anatomy model.
-- Save successful analyses in browser history using `localStorage`.
-- Generate branded PDF reports with patient details, predictions, probabilities, analyzed images, explanation maps, and research disclaimers.
-- Use dedicated Home, Analysis Workspace, Models, Reports, and History routes.
+- Analyze PNG, JPEG, and TIFF histology patches with an ensemble or an individual model.
+- Review the predicted tissue class, confidence, class probability distribution, and per-model scores.
+- Compare four classifiers and inspect notebook-derived evaluation charts.
+- View Grad-CAM, LIME, and SHAP explanations alongside the input image.
+- Browse saved analyses and export PDF reports with the source image, prediction results, and all three explanation images.
+- Explore an interactive 3D colorectal anatomy model.
+- Ask the Gemini research assistant questions about model outputs and explanation methods.
 
-## System architecture
+## Models and classes
 
-```text
-React + Vite frontend (5173)
-          |
-          | /api proxy
-          v
-FastAPI + PyTorch backend (8000)
-          |
-          +-- ResNet50
-          +-- MobileNetV2
-          +-- EfficientNet-B3
-          +-- DenseNet121
-          +-- Grad-CAM / LIME / GradientSHAP
-```
+The ensemble combines ResNet50, MobileNetV2, EfficientNet-B3, and DenseNet121. It predicts one of the eight Kather tissue classes or `UNKNOWN`:
 
-## Models and dataset
+`01_TUMOR`, `02_STROMA`, `03_COMPLEX`, `04_LYMPHO`, `05_DEBRIS`, `06_MUCOSA`, `07_ADIPOSE`, `08_EMPTY`, `UNKNOWN`.
 
-The application supports nine output classes:
-
-`01_TUMOR`, `02_STROMA`, `03_COMPLEX`, `04_LYMPHO`, `05_DEBRIS`, `06_MUCOSA`, `07_ADIPOSE`, `08_EMPTY`, and `UNKNOWN`.
-
-The dashboard presents metrics extracted from the executed project notebooks. These values are research results, not clinical performance guarantees.
+The model page reports experiment metrics recorded in the project notebooks. They describe this project's test split and are not clinical performance guarantees.
 
 | Model | Test accuracy | Mean AUC | Cohen's kappa |
 | --- | ---: | ---: | ---: |
@@ -47,172 +29,98 @@ The dashboard presents metrics extracted from the executed project notebooks. Th
 | EfficientNet-B3 | 95.76% | 0.9970 | 0.9523 |
 | DenseNet121 | 95.64% | 0.9980 | 0.9509 |
 
-The documented dataset contains 5,500 samples with a 70/15/15 train/validation/test split and 826 test images.
+## Run with Docker
 
-## Requirements
+Docker Compose builds a production image with the frontend and API served from one origin. The image includes the four checkpoints used by the inference code; unused duplicate checkpoints and notebook files are excluded from the build context.
 
-- Python 3.11+
-- Node.js 18+ (Node.js 20 recommended)
-- npm
-- Model checkpoint files in the repository's model directories
-- Windows, macOS, or Linux
+1. Install and start Docker Desktop.
+2. (Optional) Configure Gemini by copying `backend/.env.example` to `backend/.env` and setting `GOOGLE_API_KEY`. Keep this file private; it is git-ignored.
+3. From the repository root, run:
 
-## Local setup
+   ```bash
+   docker compose up --build
+   ```
 
-### 1. Install backend dependencies
+4. Open [http://localhost:8000](http://localhost:8000). The API health check is at [http://localhost:8000/health](http://localhost:8000/health).
 
-From the repository root:
+Stop the app with `Ctrl+C`, or run `docker compose down` in another terminal. To use a different host port, set `APP_PORT` (for example, `APP_PORT=8080 docker compose up --build`).
 
-```powershell
+The application works without Gemini, but chat replies require a valid `GOOGLE_API_KEY`.
+
+## Deploy to Vercel
+
+The repository includes a root-level `Dockerfile.vercel`. Vercel detects this file and deploys the combined frontend/API container. The account must allow container-based Functions and have enough bundle capacity for PyTorch and the model checkpoints.
+
+1. Push this repository to GitHub and import it in Vercel, keeping the repository root as the project root.
+2. Add `GOOGLE_API_KEY` as an encrypted Vercel environment variable for Production and Preview if the Gemini assistant should be enabled. Optionally set `GEMINI_MODEL`.
+3. Deploy. Vercel builds and runs the container using its assigned `$PORT`.
+
+Vercel Functions have platform limits for container size, memory, execution time, and request payloads. The built image is larger than the standard Function bundle limit; for an existing Vercel project, enable large Functions with `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` if Vercel requests it. Histology uploads must fit the platform's request-body limit, and LIME/SHAP analysis may take longer than a typical web request. If your Vercel plan or project settings cannot accommodate the image or inference workload, host the Docker image on a container service with suitable CPU, memory, request-size, and timeout limits, and set the frontend API base URL accordingly. See [Vercel's container deployment guide](https://vercel.com/kb/guide/docker-on-vercel-vs-render) and [Function limits](https://vercel.com/docs/functions/limitations).
+
+## Local development without Docker
+
+### Backend
+
+Python 3.11 or newer is recommended.
+
+```bash
 python -m venv .venv
+```
+
+Activate the environment, then install dependencies and start FastAPI:
+
+```bash
+# Windows PowerShell
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r backend/requirements.txt
-```
-
-On macOS/Linux, activate the environment with:
-
-```bash
-source .venv/bin/activate
-```
-
-### 2. Install frontend dependencies
-
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-### 3. Start the backend
-
-From the repository root:
-
-```bash
 cd backend
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The backend health endpoint is:
+On macOS/Linux, activate with `source .venv/bin/activate` and use `python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000` from `backend/`.
 
-```text
-http://localhost:8000/health
-```
+### Frontend
 
-### 4. Start the frontend
-
-In a second terminal:
+In another terminal:
 
 ```bash
 cd frontend
-npm run dev -- --host 0.0.0.0 --port 5173
+npm ci
+npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Open:
-
-```text
-http://localhost:5173/
-```
-
-The Vite development server proxies `/api` requests to `http://localhost:8000`.
-
-## Docker
-
-The repository includes a backend `Dockerfile` and a `docker-compose.yml` for local orchestration:
-
-```bash
-docker compose up --build
-```
-
-The backend is exposed on port `8000`. The frontend development server is exposed on port `5173`.
-
-For production hosting, deploy the frontend and backend separately. A static frontend host such as Netlify or Vercel can serve the Vite build, while the Python/PyTorch backend needs a service capable of storing the model checkpoints and running CPU/GPU inference.
+Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` calls to the backend on port 8000.
 
 ## API
 
-### Health check
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | Health check |
+| `POST /api/preview` | Create a browser-friendly preview for an uploaded image |
+| `POST /api/explain` | Return a prediction and requested explanation images |
+| `POST /api/chat` | Stream a Gemini assistant response |
 
-```http
-GET /health
-```
+Interactive API documentation is available at `/docs` while the backend is running.
 
-### Prediction and explanations
-
-```http
-POST /api/explain
-Content-Type: multipart/form-data
-```
-
-Form fields:
-
-- `file`: image file
-- `model_name`: `ensemble`, `ResNet50`, `MobileNetV2`, `EfficientNetB3`, or `DenseNet121`
-- `explanation_types`: one or more of `gradcam`, `lime`, and `shap`
-
-Example with `curl`:
-
-```bash
-curl -X POST http://localhost:8000/api/explain \
-  -F "file=@sample.png" \
-  -F "model_name=ensemble" \
-  -F "explanation_types=gradcam" \
-  -F "explanation_types=lime" \
-  -F "explanation_types=shap"
-```
-
-The response includes the prediction, class probabilities, per-model scores, and requested base64-encoded explanation images.
-
-## Frontend commands
-
-Run these commands from `frontend/`:
-
-```bash
-npm run dev       # Start the Vite development server
-npm run build     # Create a production build
-npm run preview   # Preview the production build locally
-```
-
-## Environment variables
-
-The core prediction and reporting workflow does not require an environment variable. `GOOGLE_API_KEY` is optional and is only needed for any Gemini/Google chatbot integration that is enabled in a deployment.
-
-Never commit API keys, model credentials, or private patient data. Use environment variables supplied by the hosting provider.
-
-## Project structure
+## Project layout
 
 ```text
-backend/
-  main.py                 FastAPI application
-  models/                 Model loaders and ensemble prediction
-  routers/                Prediction and explanation endpoints
-  xai/                    Grad-CAM, LIME, and GradientSHAP implementations
-  requirements.txt        Python dependencies
-
-frontend/
-  src/
-    pages/                Home, Models, Reports, and History routes
-    components/           Reusable dashboard and analysis components
-    services/             History and PDF report services
-    api/                  Backend API client
-  public/
-    models/               Local 3D anatomy asset
-    notebook-graphs/      Notebook-derived model graph images
-
-models(...)/              Trained model checkpoints
-notenooks/                Source notebooks and experiment outputs
-Dockerfile                Backend container definition
-docker-compose.yml        Local service orchestration
+backend/                 FastAPI routes, model definitions, and XAI code
+frontend/                React/Vite application and static assets
+models(ResNet50)/         ResNet50 checkpoint
+models(mobilenetv2)/      MobileNetV2 checkpoint
+models(EfficientNetB3)/   EfficientNet-B3 checkpoint
+models(DenseNet121)/      DenseNet121 checkpoint
+Dockerfile                Local production container
+Dockerfile.vercel         Vercel container entrypoint
+docker-compose.yml        Local Docker orchestration
 ```
 
-## Performance notes
+Browser history is stored locally in the user's browser. Do not upload real patient data or enter identifying health information unless your deployment has the required privacy and security controls.
 
-LIME and SHAP can be computationally expensive on CPU, especially for full-size images or multiple explanation methods. For a smoother public deployment:
+## Notes
 
-- Use a host with sufficient memory and CPU/GPU capacity.
-- Keep model checkpoints outside standard Git history when they exceed repository limits; Git LFS or model storage is recommended.
-- Add request timeouts appropriate for explanation generation.
-- Consider asynchronous job processing for multiple concurrent users.
-
-## License and attribution
-
-Review the repository's intended license and dataset terms before public distribution. Model checkpoints, notebook outputs, and third-party libraries may have separate licenses or usage requirements.
+- LIME and SHAP can be compute-intensive, particularly when all methods are requested or uploads are large.
+- The Docker image uses CPU-only PyTorch; GPU acceleration requires a different runtime and compatible host.
+- Review dataset terms, model provenance, and dependency licenses before redistribution or clinical research use.

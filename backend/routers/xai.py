@@ -2,8 +2,8 @@ import base64
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, File, UploadFile, Query
-from PIL import Image
+from fastapi import APIRouter, File, UploadFile, Query, Response
+from PIL import Image, ImageOps
 
 from models.ensemble import run_prediction
 from schemas import ExplainResult, ExplanationType, GradCamMap, LimeMap, ShapMap
@@ -21,13 +21,35 @@ def _encode_image_to_base64(img) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _encode_heatmap_to_base64(heatmap) -> str:
-    # heatmap is HxW float in [0,1]; convert to grayscale PNG
-    arr = (heatmap * 255).astype("uint8")
-    img = Image.fromarray(arr, mode="L")
+def _encode_heatmap_to_base64(heatmap, source_image: Image.Image) -> str:
+    """Render attribution magnitude as a readable, image-aligned color overlay."""
+    import cv2
+    import numpy as np
+
+    source = np.asarray(source_image.convert("RGB"), dtype=np.uint8)
+    values = np.asarray(heatmap, dtype=np.float32)
+    values = cv2.resize(values, (source.shape[1], source.shape[0]), interpolation=cv2.INTER_LINEAR)
+    values = np.nan_to_num(values, nan=0.0, posinf=1.0, neginf=0.0)
+    values = np.clip(values, 0.0, 1.0)
+    color = cv2.applyColorMap((values * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+    color = cv2.cvtColor(color, cv2.COLOR_BGR2RGB)
+    overlay = cv2.addWeighted(source, 0.44, color, 0.56, 0)
+    img = Image.fromarray(overlay, mode="RGB")
     buf = BytesIO()
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+@router.post("/preview")
+async def preview_image(file: UploadFile = File(...)) -> Response:
+    """Return a browser-friendly thumbnail for supported Pillow image formats."""
+    raw = await file.read()
+    with Image.open(BytesIO(raw)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGB")
+        image.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+        buf = BytesIO()
+        image.save(buf, format="JPEG", quality=92, optimize=True)
+    return Response(content=buf.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/explain", response_model=ExplainResult)
@@ -69,7 +91,7 @@ async def explain(
 
     if "shap" in explanation_types:
         shap_map = generate_gradient_shap(image, model_name=model_name)
-        shap = ShapMap(heatmap_base64=_encode_heatmap_to_base64(shap_map))
+        shap = ShapMap(heatmap_base64=_encode_heatmap_to_base64(shap_map, image))
 
     return ExplainResult(
         prediction=prediction,

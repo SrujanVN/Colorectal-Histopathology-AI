@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { generateMedicalReport, type PatientInfo } from "../services/reportService";
 import { PatientInfoModal } from "./PatientInfoModal";
-import type { ExplainResult } from "../api/client";
+import { uploadAndExplain, type ExplainResult, type ExplanationType } from "../api/client";
 
 interface Props {
   fileName: string;
@@ -30,12 +30,41 @@ export const DownloadReportButton: React.FC<Props> = ({
     setError(null);
 
     try {
+      const missingTypes: ExplanationType[] = [];
+      if (!result.gradcam?.heatmap_base64) missingTypes.push("gradcam");
+      if (!result.lime?.overlay_base64) missingTypes.push("lime");
+      if (!result.shap?.heatmap_base64) missingTypes.push("shap");
+
+      let completeResult = result;
+      if (missingTypes.length > 0) {
+        if (!imageBase64) {
+          throw new Error("The saved analysis is missing an image needed to create all three report explanations. Re-run the analysis and try again.");
+        }
+        const binary = window.atob(imageBase64);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const sourceFile = new File([bytes], fileName, { type: imageMimeType || "image/jpeg" });
+        const regenerated = await uploadAndExplain(sourceFile, modelName, missingTypes);
+        completeResult = {
+          ...result,
+          gradcam: result.gradcam ?? regenerated.gradcam,
+          lime: result.lime ?? regenerated.lime,
+          shap: result.shap ?? regenerated.shap,
+        };
+        if (
+          !completeResult.gradcam?.heatmap_base64 ||
+          !completeResult.lime?.overlay_base64 ||
+          !completeResult.shap?.heatmap_base64
+        ) {
+          throw new Error("Could not generate all three explanation images. Please re-run the analysis with Grad-CAM, LIME, and SHAP enabled.");
+        }
+      }
+
       await generateMedicalReport(
         patientInfo,
         fileName,
         modelName,
         timestamp,
-        result,
+        completeResult,
         imageBase64,
         imageMimeType
       );

@@ -51,9 +51,9 @@ export async function generateMedicalReport(
     doc.setFontSize(fontSize);
     doc.setTextColor(color[0], color[1], color[2]);
     if (isBold) {
-      doc.setFont(undefined, "bold");
+      doc.setFont("helvetica", "bold");
     } else {
-      doc.setFont(undefined, "normal");
+      doc.setFont("helvetica", "normal");
     }
     
     const lines = doc.splitTextToSize(text, contentWidth);
@@ -68,7 +68,7 @@ export async function generateMedicalReport(
   // Header
   doc.setFontSize(20);
   doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, "bold");
+  doc.setFont("helvetica", "bold");
   doc.text("Colorectal Cancer Histology", margin, yPos);
   yPos += 10;
   doc.setFontSize(16);
@@ -114,7 +114,7 @@ export async function generateMedicalReport(
   // Table header
   checkPageBreak(rowHeight + 5);
   doc.setFontSize(10);
-  doc.setFont(undefined, "bold");
+  doc.setFont("helvetica", "bold");
   doc.rect(margin, yPos, colWidths[0], rowHeight);
   doc.text("Class", margin + 2, yPos + 5);
   doc.rect(margin + colWidths[0], yPos, colWidths[1], rowHeight);
@@ -125,7 +125,7 @@ export async function generateMedicalReport(
   classEntries.forEach(([label, prob]) => {
     checkPageBreak(rowHeight + 5);
     const isPredicted = label === predictedClass;
-    doc.setFont(undefined, isPredicted ? "bold" : "normal");
+    doc.setFont("helvetica", isPredicted ? "bold" : "normal");
     doc.setTextColor(isPredicted ? 0 : 100, isPredicted ? 100 : 100, isPredicted ? 0 : 100);
     
     doc.rect(margin, yPos, colWidths[0], rowHeight);
@@ -150,7 +150,7 @@ export async function generateMedicalReport(
     checkPageBreak(rowHeight * 2);
     // Model header
     doc.setFontSize(9);
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     let xPos = margin;
     doc.rect(xPos, yPos, modelColWidths[0], rowHeight);
     doc.text("Class", xPos + 2, yPos + 5);
@@ -170,7 +170,7 @@ export async function generateMedicalReport(
     const topClasses = classEntries.slice(0, 5);
     topClasses.forEach(([label]) => {
       checkPageBreak(rowHeight + 5);
-      doc.setFont(undefined, label === predictedClass ? "bold" : "normal");
+      doc.setFont("helvetica", label === predictedClass ? "bold" : "normal");
       xPos = margin;
       doc.rect(xPos, yPos, modelColWidths[0], rowHeight);
       doc.text(label.length > 15 ? label.substring(0, 13) + ".." : label, xPos + 1, yPos + 5);
@@ -189,28 +189,49 @@ export async function generateMedicalReport(
     yPos += 10;
   }
 
-  // XAI Explanations Section
+  // Embed each generated explanation image in the PDF, not just its description.
   addText("EXPLAINABLE AI ANALYSIS", 14, true);
-  
-  if (result.gradcam) {
-    addText("Grad-CAM (Gradient-weighted Class Activation Mapping):", 11, true);
-    addText("This method highlights the regions of the histology image that most influenced the model's classification decision. Warmer colors indicate higher importance in the prediction.", 10);
-    yPos += 5;
-  }
-  
-  if (result.lime) {
-    addText("LIME (Local Interpretable Model-agnostic Explanations):", 11, true);
-    addText("LIME provides interpretable explanations by approximating the model's decision boundary locally around the specific image sample using interpretable linear models.", 10);
-    yPos += 5;
-  }
-  
-  if (result.shap) {
-    addText("SHAP (SHapley Additive exPlanations):", 11, true);
-    addText("SHAP uses game-theory based feature attribution to explain how each pixel contributes to the final classification prediction, providing a comprehensive view of feature importance.", 10);
-    yPos += 5;
-  }
-  
-  yPos += 10;
+  const addExplanationImage = (title: string, description: string, base64?: string) => {
+    checkPageBreak(45);
+    addText(title, 11, true);
+    addText(description, 9);
+    if (!base64) {
+      addText("This visualization was not generated for the saved analysis.", 9, false, [115, 115, 115]);
+      return;
+    }
+
+    try {
+      const imageData = `data:image/png;base64,${base64}`;
+      const dimensions = doc.getImageProperties(imageData);
+      const maxImageHeight = 175;
+      const scale = Math.min(contentWidth / dimensions.width, maxImageHeight / dimensions.height);
+      const imageWidth = dimensions.width * scale;
+      const imageHeight = dimensions.height * scale;
+      checkPageBreak(imageHeight + 10);
+      doc.addImage(imageData, "PNG", margin + (contentWidth - imageWidth) / 2, yPos, imageWidth, imageHeight);
+      yPos += imageHeight + 10;
+    } catch (error) {
+      console.warn(`Failed to embed ${title} image in PDF:`, error);
+      addText("This visualization could not be embedded. Please re-run the analysis and download the report again.", 9, false, [150, 55, 55]);
+    }
+  };
+
+  addExplanationImage(
+    "Grad-CAM (Gradient-weighted Class Activation Mapping)",
+    "Highlights image regions that most influenced the selected model's prediction.",
+    result.gradcam?.heatmap_base64
+  );
+  addExplanationImage(
+    "LIME (Local Interpretable Model-agnostic Explanations)",
+    "Outlines image superpixels that locally support or oppose the prediction.",
+    result.lime?.overlay_base64
+  );
+  addExplanationImage(
+    "SHAP (GradientShap)",
+    "Shows relative pixel attribution over the original tissue patch.",
+    result.shap?.heatmap_base64
+  );
+  yPos += 5;
 
   // Image Section
   try {

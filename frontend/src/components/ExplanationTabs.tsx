@@ -16,6 +16,11 @@ export const ExplanationTabs: React.FC<Props> = ({ explain }) => {
   const [active, setActive] = useState<TabKey | null>(
     availableTabs[0] ?? null
   );
+  const captions: Record<TabKey, string> = {
+    gradcam: "Highlights image regions that most influenced the selected model’s prediction.",
+    lime: "Outlines image superpixels that locally support or oppose the prediction.",
+    shap: "Color intensity shows relative pixel attribution over the original tissue patch.",
+  };
 
   if (!availableTabs.length) {
     return (
@@ -61,8 +66,14 @@ export const ExplanationTabs: React.FC<Props> = ({ explain }) => {
   };
 
   return (
-    <div className="card">
-      <h2 className="card-title">Explanations</h2>
+    <div className="card explanation-card">
+      <div className="explanation-card__heading">
+        <div>
+          <p className="result-card__eyebrow">MODEL INTERPRETATION</p>
+          <h2 className="card-title">Explanations</h2>
+        </div>
+        <span>Visual attribution</span>
+      </div>
       <div className="tabs">
         {availableTabs.map((tab) => (
           <button
@@ -78,12 +89,10 @@ export const ExplanationTabs: React.FC<Props> = ({ explain }) => {
           </button>
         ))}
       </div>
-      {renderImg()}
-      <p className="muted" style={{ marginTop: "0.75rem" }}>
-        Grad‑CAM highlights regions that most influenced the prediction, LIME
-        shows important superpixels, and SHAP (GradientShap) shows pixel‑level
-        contributions.
-      </p>
+      <div className="explanation-viewer">
+        {renderImg()}
+      </div>
+      {active && <p className="explanation-caption">{captions[active]}</p>}
     </div>
   );
 };

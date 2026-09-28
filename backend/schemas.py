@@ -42,5 +42,19 @@ class ExplainResult(BaseModel):
     shap: Optional[ShapMap] = None
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    context: Optional[PredictionResult] = None
+
+
+class ChatResponse(BaseModel):
+    message: str
+
+
 
 

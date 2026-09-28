@@ -1,15 +1,21 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   uploadAndExplain,
+  createImagePreview,
   type ExplainResult,
   type ExplanationType
 } from "../api/client";
 import { PredictionCard } from "../components/PredictionCard";
 import { ExplanationTabs } from "../components/ExplanationTabs";
 import { History } from "../components/History";
-import { IntestineModel } from "../components/IntestineModel";
+import { Reports } from "../components/Reports";
 import { saveToHistory } from "../services/historyService";
 import { ChatbotSidebar } from "../components/ChatbotSidebar";
+
+const IntestineModel = lazy(() =>
+  import("../components/IntestineModel").then((module) => ({ default: module.IntestineModel }))
+);
 
 const MODEL_OPTIONS = [
   "ensemble",
@@ -21,9 +27,45 @@ const MODEL_OPTIONS = [
 
 const DEFAULT_EXPLANATIONS: ExplanationType[] = ["gradcam", "lime", "shap"];
 
+interface ModelProfile {
+  name: string;
+  initials: string;
+  category: string;
+  description: string;
+  accuracy: string;
+  auc: string;
+  kappa: string;
+  graph: string;
+  totalParams: string;
+  trainableParams: string;
+  accent: string;
+}
+
+const MODEL_PROFILES: ModelProfile[] = [
+  { name: "ResNet50", initials: "RN", category: "RESIDUAL", description: "Residual connections support deeper feature extraction for colorectal histology classification.", accuracy: "96.25%", auc: "0.9982", kappa: "0.9577", graph: "resnet50", totalParams: "24.7M", trainableParams: "15.6M", accent: "#55c6e7" },
+  { name: "MobileNetV2", initials: "M2", category: "MOBILE", description: "Inverted residual blocks keep histology inference lightweight while preserving classification accuracy.", accuracy: "96.25%", auc: "0.9985", kappa: "0.9577", graph: "mobilenetv2", totalParams: "3.0M", trainableParams: "2.2M", accent: "#27cbd0" },
+  { name: "EfficientNet-B3", initials: "EF", category: "EFFICIENT", description: "Compound scaling balances depth, width, and resolution for efficient histology classification.", accuracy: "95.76%", auc: "0.9970", kappa: "0.9523", graph: "efficientnetb3", totalParams: "11.6M", trainableParams: "4.5M", accent: "#68a8f3" },
+  { name: "DenseNet121", initials: "DE", category: "DENSE", description: "Dense feature reuse connects each layer to later layers, preserving fine-grained tissue information.", accuracy: "95.64%", auc: "0.9980", kappa: "0.9509", graph: "densenet121", totalParams: "7.6M", trainableParams: "1.3M", accent: "#8279ec" },
+];
+
+type ModelChart = "training" | "confusion" | "roc";
+const MODEL_CHARTS: { type: ModelChart; label: string }[] = [
+  { type: "training", label: "Training history" },
+  { type: "confusion", label: "Confusion matrix" },
+  { type: "roc", label: "ROC curves" },
+];
+const MODEL_CHART_LABELS: Record<ModelChart, string> = {
+  training: "Training history",
+  confusion: "Confusion matrix",
+  roc: "ROC curves",
+};
+
 const AnalyzeSection: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const previewRequestId = useRef(0);
   const [modelName, setModelName] = useState<string>("ensemble");
   const [explanations, setExplanations] =
     useState<ExplanationType[]>(DEFAULT_EXPLANATIONS);
@@ -35,15 +77,41 @@ const AnalyzeSection: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
 
   const onSelectFile = async (f: File | null) => {
+    previewRequestId.current += 1;
+    const requestId = previewRequestId.current;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
     if (!f) {
       setFile(null);
       setPreviewUrl(null);
+      setPreviewError(null);
       setImageBase64("");
       setResult(null);
       return;
     }
     setFile(f);
-    setPreviewUrl(URL.createObjectURL(f));
+    setPreviewUrl(null);
+    setPreviewError(null);
+
+    try {
+      const url = await createImagePreview(f);
+      if (requestId !== previewRequestId.current) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      previewUrlRef.current = url;
+      setPreviewUrl(url);
+      } catch {
+      if (requestId !== previewRequestId.current) return;
+      const isTiff = /\.tiff?$/i.test(f.name) || f.type === "image/tiff";
+      if (isTiff) {
+        setPreviewError("TIFF preview needs the image preview service. You can still run the analysis.");
+      } else {
+        const url = URL.createObjectURL(f);
+        previewUrlRef.current = url;
+        setPreviewUrl(url);
+      }
+    }
     
     // Convert file to base64 for report generation
     try {
@@ -61,6 +129,11 @@ const AnalyzeSection: React.FC = () => {
       console.warn("Failed to convert file to base64:", err);
     }
   };
+
+  useEffect(() => () => {
+    previewRequestId.current += 1;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
 
   const onSubmit = async () => {
     if (!file) return;
@@ -146,21 +219,23 @@ const AnalyzeSection: React.FC = () => {
           >
             <input
               type="file"
-              accept="image/*"
+              accept="image/*,.tif,.tiff"
               onChange={(e) =>
                 onSelectFile(e.target.files?.[0] ?? null)
               }
             />
             <div className="upload-content">
-              {previewUrl ? (
+              {file ? (
                 <>
                   <div className="upload-preview-wrapper">
-                    <img
-                      src={previewUrl}
-                      alt="Preview"
-                      className="upload-preview-thumb"
-                    />
-                    <div className="upload-success-icon">
+                    {previewUrl ? (
+                      <img src={previewUrl} alt="Selected histology patch" className="upload-preview-thumb" />
+                    ) : (
+                      <div className="upload-preview-pending" role="status">
+                        {previewError ? "Preview unavailable" : "Preparing preview…"}
+                      </div>
+                    )}
+                    {previewUrl && <div className="upload-success-icon">
                       <svg viewBox="0 0 24 24" fill="none">
                         <circle cx="12" cy="12" r="10" fill="#22c55e" />
                         <path
@@ -171,13 +246,13 @@ const AnalyzeSection: React.FC = () => {
                           strokeLinejoin="round"
                         />
                       </svg>
-                    </div>
+                    </div>}
                   </div>
                   <p style={{ margin: "0.5rem 0 0", fontWeight: 600, color: "var(--color-text)" }}>
-                    {file?.name || "Image selected"}
+                    {file.name}
                   </p>
                   <p className="muted" style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
-                    Click to choose a different image
+                    {previewError || "Click to choose a different image"}
                   </p>
                 </>
               ) : (
@@ -346,7 +421,7 @@ const AnalyzeSection: React.FC = () => {
                     <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
                   <p className="muted" style={{ marginTop: "1rem" }}>
-                    No image selected. Upload an image above to see the preview.
+                    {file ? previewError || "Preparing image preview…" : "No image selected. Upload an image above to see the preview."}
                   </p>
                 </div>
               )}
@@ -359,7 +434,7 @@ const AnalyzeSection: React.FC = () => {
             )}
           </div>
 
-          <div className="analyze-results-column">
+          <div id="reports" className="analyze-results-column">
             {result ? (
               <PredictionCard
                 prediction={result.prediction}
@@ -401,10 +476,6 @@ const AnalyzeSection: React.FC = () => {
           </div>
         </div>
 
-        {/* History Section */}
-        <div id="history" style={{ marginTop: "3rem" }}>
-          <History />
-        </div>
       </div>
 
       {/* Floating chatbot available on the analysis page */}
@@ -413,159 +484,203 @@ const AnalyzeSection: React.FC = () => {
   );
 };
 
-export const Home: React.FC = () => {
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
+type WorkspacePage = "home" | "analyze" | "models" | "reports" | "history";
 
-  useEffect(() => {
-    // Handle hash navigation on mount
-    const hash = window.location.hash;
-    if (hash) {
-      const id = hash.substring(1); // Remove the #
-      setTimeout(() => {
-        scrollToSection(id);
-      }, 100); // Small delay to ensure DOM is ready
-    }
-  }, []);
+export const Home: React.FC<{ page?: WorkspacePage }> = ({ page = "home" }) => {
+  const [selectedModel, setSelectedModel] = useState<ModelProfile | null>(null);
+  const [selectedChart, setSelectedChart] = useState<ModelChart>("training");
+  const navigate = useNavigate();
+
+  const scrollToSection = (id: string) => {
+    const destination: Record<string, string> = {
+      analyze: "/analyze",
+      models: "/models",
+      reports: "/reports",
+      history: "/history",
+    };
+    navigate(destination[id] ?? "/");
+  };
 
   return (
     <>
       {/* Hero Section */}
+      {page === "home" && <>
       <section id="hero" className="hero">
         <div className="hero-card">
           <div className="hero-card__header">
             <div className="hero-card__header-content">
-              <p className="hero-card__eyebrow">RESEARCH PLATFORM</p>
               <h1 className="hero-card__title">
-                Colorectal Cancer
+                Colorectal
                 <br />
-                Histology Analysis with XAI
+                Histopathology
+                <br />
+                Analysis
               </h1>
               <p className="hero-card__subtitle">
-                Advanced ensemble deep learning models for histology classification
-                with explainable AI visualizations. Analyze tissue samples using
-                ResNet50, MobileNetV2, EfficientNetB3, and DenseNet121.
+                Evaluate colorectal histology tissue patches using a soft-voting
+                ensemble of 4 deep learning architectures (ResNet50, DenseNet121,
+                EfficientNet-B3, MobileNetV2) paired with Grad-CAM, LIME, and SHAP
+                visual explainability heatmaps.
               </p>
+              <div className="hero-actions">
+                <button className="hero-action" type="button" onClick={() => scrollToSection("analyze")}>
+                  Start Analysis <span aria-hidden="true">→</span>
+                </button>
+                <button className="hero-action" type="button" onClick={() => scrollToSection("models")}>
+                  Explore Models
+                </button>
+              </div>
             </div>
             <div className="hero-card__model-container">
-              <IntestineModel />
+              <Suspense fallback={<div className="model-canvas-fallback">Preparing the colorectal model…</div>}>
+                <IntestineModel />
+              </Suspense>
             </div>
-          </div>
-
-          <div className="hero-card__grid">
-            <article className="course-card">
-              <p className="course-card__label">ENSEMBLE MODELS</p>
-              <h2 className="course-card__title">
-                Four-model ensemble
-                <br />
-                for robust predictions
-              </h2>
-              <p className="course-card__body">
-                Combining ResNet50, MobileNetV2, EfficientNetB3, and DenseNet121
-                trained on Kather colorectal histology dataset for accurate
-                tissue classification across 8 classes.
-              </p>
-              <button
-                className="course-card__cta"
-                type="button"
-                onClick={() => scrollToSection("features")}
-              >
-                EXPLORE MODELS
-              </button>
-            </article>
-
-            <article className="course-card">
-              <p className="course-card__label">XAI EXPLANATIONS</p>
-              <h2 className="course-card__title">
-                Interpretable AI
-                <br />
-                with multiple methods
-              </h2>
-              <p className="course-card__body">
-                Visualize model decisions using Grad-CAM, LIME, and SHAP
-                explanations. Understand which tissue regions drive
-                classification predictions.
-              </p>
-            <button
-              className="course-card__cta"
-              type="button"
-              onClick={() => scrollToSection("analyze")}
-            >
-              TRY ANALYSIS
-            </button>
-            </article>
-          </div>
-
-          <div className="hero-card__badge">
-            <span className="hero-card__badge-label">KATHER DATASET</span>
-            <span className="hero-card__badge-time">8 CLASSES</span>
           </div>
         </div>
       </section>
 
+      <section className="model-performance" aria-labelledby="model-performance-title">
+        <div className="model-performance__panel">
+          <div className="model-performance__header">
+            <div>
+              <p className="model-performance__eyebrow">MODEL PERFORMANCE</p>
+              <h2 id="model-performance-title">Four models, one transparent ensemble</h2>
+              <p>
+                Notebook-reported test accuracy from the 826-image held-out split.
+                See the full graphs, metrics, and explanation methods in Models.
+              </p>
+            </div>
+            <button className="model-performance__link" type="button" onClick={() => scrollToSection("models")}>
+              View full model details <span aria-hidden="true">›</span>
+            </button>
+          </div>
+          <div className="model-performance__grid">
+            {MODEL_PROFILES.map((model) => (
+              <button
+                className="model-performance__stat"
+                key={model.name}
+                type="button"
+                onClick={() => setSelectedModel(model)}
+              >
+                <span>{model.name}</span>
+                <strong>{model.accuracy}</strong>
+                <small>TEST ACCURACY</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+      </>}
+
       {/* Features Section */}
-      <section id="features" className="inner-page section-spacing">
+      {page === "models" && <section id="models" className="inner-page section-spacing">
         <header className="inner-page__header">
-          <h1>Features & Capabilities</h1>
+          <h1>Models &amp; Explainability</h1>
           <p>
-            Explore the deep learning models, explainable AI methods, and dataset
-            information that power this histology analysis platform.
+            Four image classifiers vote together on colorectal tissue patches.
+            Explore the notebook-backed evaluation results and understand what
+            each explanation method highlights.
           </p>
         </header>
+
+        <div className="model-summary-grid">
+          <article className="model-summary-card">
+            <strong>5,500</strong>
+            <b>total samples</b>
+            <span>8 Kather tissue classes + UNKNOWN</span>
+          </article>
+          <article className="model-summary-card">
+            <strong>70 / 15 / 15</strong>
+            <b>train / validation / test</b>
+            <span>Test split contains 826 images</span>
+          </article>
+          <article className="model-summary-card">
+            <strong>4 models</strong>
+            <b>soft-voting ensemble</b>
+            <span>Probabilities are averaged per class</span>
+          </article>
+          <article className="model-summary-card">
+            <strong>9 classes</strong>
+            <b>classification labels</b>
+            <span>Includes an out-of-distribution UNKNOWN class</span>
+          </article>
+        </div>
+
+        <section className="model-comparison-card" aria-labelledby="model-comparison-title">
+          <div className="model-comparison-card__header">
+            <div>
+              <p className="model-performance__eyebrow">NOTEBOOK EVALUATION</p>
+              <h2 id="model-comparison-title">Test accuracy and model comparison</h2>
+            </div>
+            <span className="model-comparison-card__badge">Reported test split · n=826</span>
+          </div>
+          <div className="model-comparison-list">
+            {MODEL_PROFILES.map((model) => (
+              <div className="model-comparison-row" key={model.name}>
+                <strong>{model.name}</strong>
+                <div className="model-comparison-track" aria-label={`${model.accuracy} test accuracy`}>
+                  <span style={{ width: model.accuracy, background: model.accent }} />
+                </div>
+                <div className="model-comparison-meta">
+                  <b>{model.accuracy}</b>
+                  <span className="model-comparison-auc">AUC {model.auc}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="model-comparison-card__note">
+            Values are taken from the executed training notebooks. They are not a guarantee of future clinical performance and should be read with the split, class balance, and dataset limitations in mind.
+          </p>
+        </section>
+
+        <div className="model-detail-grid">
+          {MODEL_PROFILES.map((model) => (
+            <article className="model-detail-card" key={model.name}>
+              <header className="model-detail-card__header">
+                <span className="model-detail-card__icon" style={{ background: model.accent }}>{model.initials}</span>
+                <div>
+                  <p>{model.category}</p>
+                  <h2>{model.name}</h2>
+                </div>
+              </header>
+              <p className="model-detail-card__description">{model.description}</p>
+              <div className="model-detail-card__metrics">
+                <div><strong>{model.accuracy}</strong><span>test accuracy</span></div>
+                <div><strong>{model.auc}</strong><span>mean AUC</span></div>
+                <div><strong>{model.kappa}</strong><span>Cohen&apos;s kappa</span></div>
+              </div>
+              <p className="model-detail-card__parameters">
+                {model.totalParams} total · {model.trainableParams} trainable
+              </p>
+              <div className="notebook-graphs">
+                <div className="notebook-graphs__header">
+                  <h3>Notebook graphs</h3>
+                  <span>Training · confusion · ROC</span>
+                </div>
+                <div className="notebook-graphs__grid">
+                  {MODEL_CHARTS.map((chart) => (
+                    <button
+                      className="notebook-graph-preview"
+                      key={chart.type}
+                      type="button"
+                      onClick={() => {
+                        setSelectedModel(model);
+                        setSelectedChart(chart.type);
+                      }}
+                    >
+                      <img src={`/model-graphs/${model.graph}-${chart.type}.png`} alt={`${model.name} ${chart.label}`} />
+                      <span>{chart.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <h2 className="explainability-section-title">Explainability methods</h2>
         <div className="inner-grid">
-          <div className="course-card">
-            <p className="course-card__label">RESNET50</p>
-            <h2 className="course-card__title">
-              Residual network architecture
-            </h2>
-            <p className="course-card__body">
-              Deep convolutional network with residual connections, optimized for
-              histology image classification with 50 layers of feature extraction.
-            </p>
-            <button className="course-card__cta" type="button">
-              VIEW MODEL
-            </button>
-          </div>
-          <div className="course-card">
-            <p className="course-card__label">MOBILENETV2</p>
-            <h2 className="course-card__title">Lightweight mobile architecture</h2>
-            <p className="course-card__body">
-              Efficient depthwise separable convolutions designed for fast
-              inference while maintaining high accuracy on histology tissue
-              classification tasks.
-            </p>
-            <button className="course-card__cta" type="button">
-              VIEW MODEL
-            </button>
-          </div>
-          <div className="course-card">
-            <p className="course-card__label">EFFICIENTNETB3</p>
-            <h2 className="course-card__title">Compound scaling optimization</h2>
-            <p className="course-card__body">
-              Balanced scaling of depth, width, and resolution for optimal
-              performance on colorectal histology classification with efficient
-              resource usage.
-            </p>
-            <button className="course-card__cta" type="button">
-              VIEW MODEL
-            </button>
-          </div>
-          <div className="course-card">
-            <p className="course-card__label">DENSENET121</p>
-            <h2 className="course-card__title">Dense connectivity pattern</h2>
-            <p className="course-card__body">
-              Densely connected convolutional layers that maximize feature reuse
-              and gradient flow for improved histology tissue classification
-              accuracy.
-            </p>
-            <button className="course-card__cta" type="button">
-              VIEW MODEL
-            </button>
-          </div>
           <div className="course-card">
             <p className="course-card__label">GRAD-CAM</p>
             <h2 className="course-card__title">Gradient-weighted activation maps</h2>
@@ -628,9 +743,10 @@ export const Home: React.FC = () => {
           </div>
         </div>
       </section>
+      }
 
       {/* About Section */}
-      <section id="about" className="inner-page section-spacing">
+      {false && <section id="about" className="inner-page section-spacing">
         <header className="inner-page__header">
           <h1>About the Project</h1>
           <p>
@@ -701,9 +817,52 @@ export const Home: React.FC = () => {
           </div>
         </div>
       </section>
+      }
 
       {/* Analyze Section */}
-      <AnalyzeSection />
+      {page === "analyze" && <AnalyzeSection />}
+
+      {(page === "reports" || page === "history") && (
+        <section className={`inner-page section-spacing workspace-page workspace-page--${page}`}>
+          <header className="inner-page__header">
+            <p className="page-eyebrow">{page === "reports" ? "DOCUMENT CENTER" : "WORKSPACE ACTIVITY"}</p>
+            <h1>{page === "reports" ? "Reports" : "Analysis history"}</h1>
+            <p>
+              {page === "reports"
+                ? "Turn a saved result into a clear, downloadable PDF report."
+                : "Revisit earlier image analyses, inspect their explanations, or remove records you no longer need."}
+            </p>
+          </header>
+          {page === "reports" ? <Reports /> : <History title="Saved analyses" />}
+        </section>
+      )}
+
+      {selectedModel && (
+        <div className="model-dialog-backdrop" onMouseDown={() => setSelectedModel(null)}>
+          <section
+            className="model-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="model-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="model-dialog__header">
+              <h2 id="model-dialog-title">{selectedModel.name} · {MODEL_CHART_LABELS[selectedChart]}</h2>
+              <button type="button" className="model-dialog__close" onClick={() => setSelectedModel(null)}>
+                Close
+              </button>
+            </div>
+            <img
+              className="model-dialog__chart"
+              src={`/model-graphs/${selectedModel.graph}-${selectedChart}.png`}
+              alt={`${selectedModel.name} ${MODEL_CHART_LABELS[selectedChart]}`}
+            />
+            <p className="model-dialog__footer">
+              Click outside the graph or use Close to return to the Models page.
+            </p>
+          </section>
+        </div>
+      )}
     </>
   );
 };

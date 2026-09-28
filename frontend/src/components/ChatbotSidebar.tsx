@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { sendChatMessage, type ChatMessage, type ExplainResult } from "../api/client";
+import { streamChatMessage, type ChatMessage, type ExplainResult } from "../api/client";
 import { saveChatHistory, loadChatHistory, clearChatHistory } from "../services/chatService";
+import { ChatMarkdown } from "./ChatMarkdown";
 
 interface ChatbotSidebarProps {
   currentResult?: ExplainResult | null;
@@ -11,21 +12,26 @@ export const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ currentResult })
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [hasStreamedReply, setHasStreamedReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Load chat history on mount
   useEffect(() => {
-    const savedMessages = loadChatHistory();
+    const savedMessages = loadChatHistory().filter((message) =>
+      !(message.role === "assistant" && message.content.startsWith(
+        "I'm here to help answer questions about colorectal cancer histology classification and explainable AI!"
+      ))
+    );
     if (savedMessages.length > 0) {
       setMessages(savedMessages);
     } else {
       // Initialize with welcome message
       setMessages([
-        {
+          {
           role: "assistant",
-          content: "Hello! I'm your AI assistant. I can help answer questions about colorectal cancer, histology classification, and general topics. How can I help you today?"
+          content: "Hello! I’m happy to help explain tissue classes, model results, or the Grad-CAM, LIME, and SHAP visualizations. What would you like to know?"
         }
       ]);
     }
@@ -34,7 +40,8 @@ export const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ currentResult })
   // Save chat history when messages change
   useEffect(() => {
     if (messages.length > 0) {
-      saveChatHistory(messages);
+      const timer = window.setTimeout(() => saveChatHistory(messages), 250);
+      return () => window.clearTimeout(timer);
     }
   }, [messages]);
 
@@ -63,21 +70,24 @@ export const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ currentResult })
     setInputValue("");
     setError(null);
     setIsLoading(true);
+    setHasStreamedReply(false);
 
     try {
-      const response = await sendChatMessage(
+      let assistantText = "";
+      await streamChatMessage(
         newMessages,
-        currentResult?.prediction
+        currentResult?.prediction,
+        (text) => {
+          assistantText += text;
+          setHasStreamedReply(true);
+          setMessages([...newMessages, { role: "assistant", content: assistantText }]);
+        }
       );
-
-      setMessages([...newMessages, {
-        role: "assistant",
-        content: response.message
-      }]);
+      if (!assistantText) throw new Error("Gemini returned an empty response. Please try again.");
     } catch (err: any) {
-      setError(err.message || "Failed to get response. Please try again.");
+      setError(err.message || "Sorry, I couldn’t get a response just now. Please try again in a moment.");
       // Remove the user message on error
-      setMessages(messages);
+      setMessages(newMessages);
     } finally {
       setIsLoading(false);
     }
@@ -107,7 +117,7 @@ export const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ currentResult })
       setMessages([
         {
           role: "assistant",
-          content: "Chat history cleared. How can I help you?"
+          content: "Your conversation has been cleared. How may I help you?"
         }
       ]);
     }
@@ -138,7 +148,10 @@ export const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ currentResult })
       {isOpen && (
         <div className="chatbot-sidebar">
           <div className="chatbot-header">
-            <h3>AI Assistant</h3>
+            <div className="chatbot-header__identity">
+              <h3>Gemini assistant</h3>
+              <span>Colorectal histology research support</span>
+            </div>
             <div className="chatbot-header-actions">
               {currentResult && (
                 <button
@@ -172,10 +185,10 @@ export const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ currentResult })
                 key={index}
                 className={`chatbot-message chatbot-message--${msg.role}`}
               >
-                <div className="chatbot-message-content">{msg.content}</div>
+                <div className="chatbot-message-content"><ChatMarkdown content={msg.content} /></div>
               </div>
             ))}
-            {isLoading && (
+            {isLoading && !hasStreamedReply && (
               <div className="chatbot-message chatbot-message--assistant">
                 <div className="chatbot-message-content">
                   <span className="chatbot-typing-indicator">
@@ -187,7 +200,7 @@ export const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ currentResult })
               </div>
             )}
             {error && (
-              <div className="chatbot-error">
+              <div className="chatbot-error" role="status">
                 {error}
               </div>
             )}
