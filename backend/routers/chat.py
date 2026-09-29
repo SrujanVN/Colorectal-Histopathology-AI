@@ -136,30 +136,33 @@ async def chat(request: ChatRequest):
             ),
         )
 
-    try:
+    async def stream_events():
+        response_stream = None
+        first_text = None
+        yield ": connected\n\n"
         for attempt in range(3):
             response_stream = _generate_response_stream(request, api_key)
             try:
                 first_text = await asyncio.to_thread(_next_response_text, response_stream)
                 break
             except Exception as exc:
-                if getattr(exc, "code", None) not in {429, 503} or attempt == 2:
-                    raise
+                if getattr(exc, "code", None) != 503 or attempt == 2:
+                    logger.exception("Gemini chat request failed")
+                    provider_error = provider_error_message(exc)
+                    message = provider_error[1] if provider_error else "Gemini could not respond right now. Please try again shortly."
+                    yield f"event: error\ndata: {json.dumps({'message': message})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
                 logger.warning("Gemini is temporarily unavailable; retrying chat request (%s/2)", attempt + 1)
                 await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.5))
-    except Exception as exc:
-        logger.exception("Gemini chat request failed")
-        provider_error = provider_error_message(exc)
-        if provider_error:
-            status_code, detail = provider_error
-            raise HTTPException(status_code=status_code, detail=detail) from exc
-        raise HTTPException(
-            status_code=502,
-            detail="Gemini could not respond right now. Please try again shortly.",
-        ) from exc
 
-    async def stream_events():
-        nonlocal first_text
+        # Start the SSE response before waiting on Gemini so a slow first token
+        # cannot turn into a generic gateway 502 in the browser.
+        if response_stream is None or first_text is None:
+            yield f"event: error\ndata: {json.dumps({'message': 'Gemini returned an empty response. Please try again.'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
         while first_text is not None:
             yield f"data: {json.dumps({'text': first_text}, ensure_ascii=False)}\n\n"
             try:

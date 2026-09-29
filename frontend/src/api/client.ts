@@ -69,21 +69,44 @@ export async function streamChatMessage(
   prediction: PredictionResult | undefined,
   onText: (text: string) => void
 ): Promise<void> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ messages, context: prediction ?? null }),
-    });
-  } catch {
-    throw new Error("I can’t reach the chat service right now. Please try again in a moment.");
+  const requestBody = JSON.stringify({ messages, context: prediction ?? null });
+  let response: Response | undefined;
+  let networkError: unknown;
+
+  // Hugging Face may briefly return gateway errors while its Space wakes up.
+  // Retry only transport/upstream failures; do not retry Gemini 429 quota errors.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = undefined;
+    try {
+      response = await fetch(`${API_BASE}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: requestBody,
+      });
+      networkError = undefined;
+    } catch (error) {
+      networkError = error;
+    }
+
+    if (response?.ok || (response && ![502, 503, 504].includes(response.status)) || attempt === 2) break;
+    await response?.body?.cancel().catch(() => undefined);
+    await new Promise((resolve) => window.setTimeout(resolve, 800 * (attempt + 1)));
   }
 
+  if (!response) {
+    if (networkError) throw new Error("I can’t reach the chat service right now. Please try again in a moment.");
+    throw new Error("The chat service did not respond. Please try again in a moment.");
+  }
   if (response.status === 404) {
     throw new Error("The Gemini chat endpoint is not active yet. Please restart the backend and try again.");
   }
-  if (!response.ok) throw new Error(await readApiError(response));
+  if (!response.ok) {
+    const detail = await readApiError(response);
+    if ([502, 503, 504].includes(response.status) && detail === `Request failed (${response.status}).`) {
+      throw new Error("The chat service is temporarily unavailable after retrying. Please try again shortly.");
+    }
+    throw new Error(detail);
+  }
   if (!response.body) throw new Error("The chat response could not be streamed. Please try again.");
 
   const reader = response.body.getReader();
