@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,6 +19,25 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 router = APIRouter()
 logger = logging.getLogger(__name__)
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+MAX_CHAT_MESSAGES = 12
+MAX_MESSAGE_CHARS = 4000
+
+
+def provider_error_message(exc: Exception) -> tuple[int, str] | None:
+    """Map transient Gemini errors to clear, actionable UI messages."""
+    code = getattr(exc, "code", None)
+    if code == 429:
+        return (
+            429,
+            "Gemini's rate limit or daily quota for this Google project was reached. "
+            "Check Google AI Studio usage and rate limits, then wait for the limit to reset.",
+        )
+    if code == 503:
+        return (
+            503,
+            "Gemini is temporarily overloaded. The assistant retried; please wait briefly and try again.",
+        )
+    return None
 
 
 @router.get("/chat/status")
@@ -65,22 +85,26 @@ Current analysis context:
 
 def _generate_response_stream(request: ChatRequest, api_key: str):
     client = genai.Client(api_key=api_key)
-    conversation = request.messages
+    # Bound chat history so a long-lived browser conversation does not keep
+    # consuming more input tokens and hitting project rate limits.
+    conversation = request.messages[-MAX_CHAT_MESSAGES:]
     while conversation and conversation[0].role != "user":
         conversation = conversation[1:]
-    contents = [
-        types.Content(
-            role="model" if message.role == "assistant" else "user",
-            parts=[types.Part.from_text(text=message.content)],
-        )
-        for message in conversation
-    ]
+    contents = []
+    for message in conversation:
+        role = "model" if message.role == "assistant" else "user"
+        text = message.content[-MAX_MESSAGE_CHARS:]
+        if contents and contents[-1].role == role:
+            contents[-1].parts.append(types.Part.from_text(text=f"\n\n{text}"))
+        else:
+            contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
     yield from client.models.generate_content_stream(
         model=MODEL_NAME,
         contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=create_system_prompt(request.context),
-            max_output_tokens=900,
+            max_output_tokens=500,
+            thinking_config=types.ThinkingConfig(thinking_level="low"),
         ),
     )
 
@@ -122,14 +146,13 @@ async def chat(request: ChatRequest):
                 if getattr(exc, "code", None) not in {429, 503} or attempt == 2:
                     raise
                 logger.warning("Gemini is temporarily unavailable; retrying chat request (%s/2)", attempt + 1)
-                await asyncio.sleep(0.8 * (2 ** attempt))
+                await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.5))
     except Exception as exc:
         logger.exception("Gemini chat request failed")
-        if getattr(exc, "code", None) in {429, 503}:
-            raise HTTPException(
-                status_code=503,
-                detail="Gemini is busy right now. Please try your message again in a moment.",
-            ) from exc
+        provider_error = provider_error_message(exc)
+        if provider_error:
+            status_code, detail = provider_error
+            raise HTTPException(status_code=status_code, detail=detail) from exc
         raise HTTPException(
             status_code=502,
             detail="Gemini could not respond right now. Please try again shortly.",
@@ -143,11 +166,8 @@ async def chat(request: ChatRequest):
                 first_text = await asyncio.to_thread(_next_response_text, response_stream)
             except Exception as exc:
                 logger.exception("Gemini response stream interrupted")
-                message = (
-                    "Gemini is busy right now. Please try again in a moment."
-                    if getattr(exc, "code", None) in {429, 503}
-                    else "I couldn’t finish that reply. Please try again."
-                )
+                provider_error = provider_error_message(exc)
+                message = provider_error[1] if provider_error else "I couldn’t finish that reply. Please try again."
                 yield f"event: error\ndata: {json.dumps({'message': message})}\n\n"
                 return
         yield "data: [DONE]\n\n"
