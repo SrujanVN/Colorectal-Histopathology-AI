@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Dict, List, Tuple
+import os
 
 import torch
 from PIL import Image
@@ -44,7 +45,8 @@ TRANSFORM_SIZES = {
 }
 
 
-_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+_force_cpu = os.getenv("COLORECTAL_FORCE_CPU", "0").lower() in {"1", "true", "yes"}
+_device = torch.device("cuda" if torch.cuda.is_available() and not _force_cpu else "cpu")
 _models: Dict[str, torch.nn.Module] = {}
 
 

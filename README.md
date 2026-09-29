@@ -1,3 +1,14 @@
+---
+title: Colorectal Histopathology Analysis
+emoji: 🔬
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+python_version: 3.12
+app_file: app.py
+short_description: Research app for colorectal tissue classification and explainability
+---
+
 # Colorectal Histopathology Analysis
 
 An educational research application for exploring colorectal tissue image classification and model explanations. It combines a React/Vite interface with a FastAPI and PyTorch inference API, four image classifiers, and Grad-CAM, LIME, and GradientSHAP visualizations.
@@ -47,15 +58,16 @@ Stop the app with `Ctrl+C`, or run `docker compose down` in another terminal. To
 
 The application works without Gemini, but chat replies require a valid `GOOGLE_API_KEY`.
 
-## Deploy to Vercel
+## Free deployment: Vercel frontend + Hugging Face backend
 
-The repository includes a root-level `Dockerfile.vercel`. Vercel detects this file and deploys the combined frontend/API container. The account must allow container-based Functions and have enough bundle capacity for PyTorch and the model checkpoints.
+The frontend remains the existing Vite application and can be served as a static Vercel Hobby deployment. The FastAPI analysis API runs in a Hugging Face Gradio ZeroGPU Space, with a small Gradio landing page and the existing `/api/*` routes. The Vercel build uses `VITE_API_BASE_URL` to send API requests to the Space.
 
-1. Push this repository to GitHub and import it in Vercel, keeping the repository root as the project root.
-2. Add `GOOGLE_API_KEY` as an encrypted Vercel environment variable for Production and Preview if the Gemini assistant should be enabled. Optionally set `GEMINI_MODEL`.
-3. Deploy. Vercel builds and runs the container using its assigned `$PORT`.
+1. Create a **Gradio Space** on Hugging Face and select **ZeroGPU Free** hardware. Docker Spaces require a paid personal plan.
+2. Push this repository to the Space repository. The root `app.py` mounts the existing FastAPI routes in the Gradio Space; dependencies are listed in the root `requirements.txt`.
+3. Add `GOOGLE_API_KEY` as a Space secret in **Settings → Variables and secrets** if Gemini chat should be enabled. Keep API keys out of Git.
+4. Import this GitHub repository into Vercel, set the project root to `frontend`, and add `VITE_API_BASE_URL` with the Space's public `https://<owner>-<space>.hf.space` URL. Deploy the Vercel project.
 
-Vercel Functions have platform limits for container size, memory, execution time, and request payloads. The built image is larger than the standard Function bundle limit; for an existing Vercel project, enable large Functions with `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` if Vercel requests it. Histology uploads must fit the platform's request-body limit, and LIME/SHAP analysis may take longer than a typical web request. If your Vercel plan or project settings cannot accommodate the image or inference workload, host the Docker image on a container service with suitable CPU, memory, request-size, and timeout limits, and set the frontend API base URL accordingly. See [Vercel's container deployment guide](https://vercel.com/kb/guide/docker-on-vercel-vs-render) and [Function limits](https://vercel.com/docs/functions/limitations).
+ZeroGPU is shared and has a daily quota, so it may queue or throttle inference after the free quota is used. LIME/SHAP are compute-intensive and may take longer on free capacity. See [Hugging Face ZeroGPU](https://huggingface.co/docs/hub/spaces-zerogpu), [Spaces overview](https://huggingface.co/docs/hub/spaces-overview), and [Vercel Hobby](https://vercel.com/docs/plans/hobby).
 
 ## Local development without Docker
 
@@ -113,7 +125,6 @@ models(mobilenetv2)/      MobileNetV2 checkpoint
 models(EfficientNetB3)/   EfficientNet-B3 checkpoint
 models(DenseNet121)/      DenseNet121 checkpoint
 Dockerfile                Local production container
-Dockerfile.vercel         Vercel container entrypoint
 docker-compose.yml        Local Docker orchestration
 ```
 

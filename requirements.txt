@@ -1,0 +1,3 @@
+# Hugging Face ZeroGPU supports PyTorch 2.8 and newer. Gradio is provided by the SDK.
+torch>=2.8.0
+-r backend/requirements.txt
