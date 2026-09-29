@@ -18,7 +18,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 MAX_CHAT_MESSAGES = 12
 MAX_MESSAGE_CHARS = 4000
 
