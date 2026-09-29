@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 
+@router.get("/chat/status")
+async def chat_status() -> dict[str, str | bool]:
+    """Expose configuration state without returning or logging the API key."""
+    configured = bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+    return {"configured": configured, "model": MODEL_NAME}
+
+
 def format_prediction_context(context: PredictionResult | None) -> str:
     if not context:
         return "No analysis result is currently attached to this conversation."
@@ -98,7 +105,11 @@ async def chat(request: ChatRequest):
     if not api_key:
         raise HTTPException(
             status_code=503,
-            detail="The Gemini assistant needs an API key. Set GOOGLE_API_KEY in backend/.env and restart the backend.",
+            detail=(
+                "Gemini chat is not configured. Add GOOGLE_API_KEY as a Hugging Face Space "
+                "secret in Settings → Variables and secrets, then restart the Space. "
+                "For local development, put it in backend/.env."
+            ),
         )
 
     try:
