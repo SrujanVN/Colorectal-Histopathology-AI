@@ -15,6 +15,28 @@ An educational research application for exploring colorectal tissue image classi
 
 > **Research use only.** This application is not a medical device and does not provide a diagnosis. Its outputs must not be used as the sole basis for clinical decisions. A qualified pathologist or clinician should interpret patient-specific findings.
 
+## Table of contents
+
+- [Working demo](#working-demo)
+- [Highlights](#highlights)
+- [Models and classes](#models-and-classes)
+- [Run with Docker](#run-with-docker)
+- [Free deployment: Vercel frontend + Hugging Face backend](#free-deployment-vercel-frontend--hugging-face-backend)
+- [Local development without Docker](#local-development-without-docker)
+  - [Backend](#backend)
+  - [Frontend](#frontend)
+- [API](#api)
+- [Project layout](#project-layout)
+- [Notes](#notes)
+
+## Working demo
+
+Watch the project walkthrough:
+
+[![Watch the colorectal histopathology analysis demo](https://img.youtube.com/vi/uI_yoFsACN4/hqdefault.jpg)](https://youtu.be/uI_yoFsACN4)
+
+[Open the demo on YouTube](https://youtu.be/uI_yoFsACN4).
+
 ## Highlights
 
 - Analyze PNG, JPEG, and TIFF histology patches with an ensemble or an individual model.
